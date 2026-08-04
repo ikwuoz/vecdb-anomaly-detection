@@ -41,6 +41,7 @@ def test_get_closest_returns_best_match(direct_vm, direct_deploy, direct_alice):
     closest = contract.get_closest("payment gateway timeout")
     assert closest is not None
     assert closest["text"] == "payment gateway timeout"
+    assert isinstance(closest["similarity"], str)
 
 
 def test_remove_observation(direct_vm, direct_deploy, direct_alice):

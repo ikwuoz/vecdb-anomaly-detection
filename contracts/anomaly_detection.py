@@ -1,7 +1,7 @@
 # {
 #   "Seq": [
-#     { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" },
-#     { "Depends": "py-lib-genlayer-embeddings:0bmbm3cyfwxsyh454z53vxqjf47wz2q7smcqp1q4g4a6k2kidnyk" }
+#     { "Depends": "py-lib-genlayer-embeddings:0bmbm3cyfwxsyh454z53vxqjf47wz2q7smcqp1q4g4a6k2kidnyk" },
+#     { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 #   ]
 # }
 
@@ -65,7 +65,7 @@ class AnomalyDetection(gl.Contract):
             "text": r.value.text,
             "source": r.value.source,
             "log_id": str(r.value.log_id),
-            "similarity": self._similarity(r.distance),
+            "similarity": "{:.4f}".format(self._similarity(r.distance)),
         }
 
     @gl.public.view
