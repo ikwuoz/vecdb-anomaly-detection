@@ -14,13 +14,6 @@ observation as *novel* (dissimilar to everything already stored) or a
 threshold. The threshold core is the same primitive that powers duplicate
 detection, outage gating, and intent routing, so it is kept generic.
 
-Confirmed genlayer_embeddings SDK surface:
-  import genlayer_embeddings as gle
-  gle.VecDB[np.float32, typing.Literal[384], V]
-      .insert(embedding, value) -> Id ; .knn(embedding, k) -> iterator
-      elements expose .value, .distance, .id ; VecDB supports len()
-  gle.SentenceTransformer("all-MiniLM-L6-v2")(text) -> (384,) float32
-  Distance is EuclideanDistanceSquared; similarity ~= 1/(1+distance).
 """
 
 import numpy as np
