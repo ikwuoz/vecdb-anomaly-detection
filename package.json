@@ -1,0 +1,11 @@
+{
+  "name": "genlayer-anomaly-detection",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "demo": "node scripts/anomaly_demo.mjs"
+  },
+  "devDependencies": {
+    "genlayer-js": "^1.1.8"
+  }
+}
