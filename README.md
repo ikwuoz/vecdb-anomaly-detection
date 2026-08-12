@@ -1,6 +1,6 @@
 # GenLayer Anomaly Detection
 
-An intelligent contract on [GenLayer](https://genlayer.com/) that indexes free-text observations as embeddings and classifies each incoming observation as **novel** (dissimilar to everything already stored) or a **near-duplicate** of an existing one. It uses the `genlayer_embeddings` SDK (`VecDB` + `SentenceTransformer`) running inside the GenVM.
+An intelligent contract on [GenLayer](https://genlayer.com/) that indexes free-text observations as embeddings and classifies each incoming observation as **novel** (a genuinely new anomaly) or a **near-duplicate** of an existing one. It uses the `genlayer_embeddings` SDK (`VecDB` + `SentenceTransformer`) running inside the GenVM, and an LLM that adjudicates each novelty decision inside a consensus block (`gl.vm.run_nondet`), so GenLayer validators independently bind the stored verdict.
 
 This is a generic vector-semantic primitive — useful for duplicate detection, outage gating, and intent routing.
 
@@ -34,13 +34,14 @@ pyproject.toml                # Python/pytest configuration
 ## Contract API
 | Method | Type | Description |
 |--------|------|-------------|
-| `add_observation(log, source)` | write | Embed and store an observation; returns `{ log_id, is_novel, count }` |
+| `AnomalyDetection(novel_threshold=80)` | ctor | Deploy with a novelty threshold; `80` means 0.80 (integer percentage, 0–100, since floats aren't calldata-encodable) |
+| `add_observation(log, source)` | write | Embed an observation, have the LLM adjudicate novelty (consensus-validated), and store it; returns `{ log_id, is_novel, reason, count }` |
 | `remove_observation(log_id)` | write | Remove an observation by id; returns `{ removed, count }` |
-| `is_novel(text)` | view | True if `text` is dissimilar to everything stored |
+| `is_novel(text)` | view | Fast deterministic check: True if `text` is dissimilar to everything stored |
 | `get_closest(text)` | view | The stored observation nearest to `text`, with similarity |
 | `observation_count()` | view | Number of stored observations |
 
-Novelty is decided by a similarity threshold: an observation is *novel* when its cosine-similarity to the nearest stored observation is below the threshold.
+Novelty is decided by an LLM adjudication: embedding + nearest-neighbor search shortlists the closest candidate deterministically, then the LLM classifies the incoming log as **NOVEL** or **DUPLICATE** given that evidence. Because the LLM call is non-deterministic, it runs inside `gl.vm.run_nondet`, whose validator independently verifies the verdict before it is stored. The similarity threshold is used as evidence in the prompt and as the fallback when the LLM returns a malformed verdict.
 
 ## Quick Start
 
@@ -73,8 +74,6 @@ To reuse a deployed contract:
 ```shell
 ANOMALY_CONTRACT_ADDRESS=0x... node scripts/anomaly_demo.mjs
 ```
-
-> Note: Studio's free tier rate-limits RPC requests (~5000/day). The demo polls conservatively; if you hit the limit, wait for it to reset.
 
 ## Testing Strategy
 | Test Type | Command | Speed | Requires Studio |

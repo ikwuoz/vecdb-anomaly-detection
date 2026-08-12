@@ -19,3 +19,4 @@ __pycache__/
 /context
 *.compiled.js
 .pytest_cache
+opencode.json
