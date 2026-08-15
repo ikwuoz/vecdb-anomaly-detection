@@ -63,7 +63,7 @@ def test_malformed_verdict_falls_back_to_threshold(
     assert duplicate["is_novel"] is False
 
 
-def test_validator_accepts_and_rejects_verdicts(
+def test_validator_recomputes_decision_and_rejects_divergence(
     direct_vm, direct_deploy, direct_alice
 ):
     contract = direct_deploy("contracts/anomaly_detection.py")
@@ -71,18 +71,26 @@ def test_validator_accepts_and_rejects_verdicts(
 
     contract.add_observation("payment gateway timeout")
 
+    # Verdict matching the independently recomputed decision (DUPLICATE) passes.
     direct_vm.mock_llm(
         ".*payment gateway timeout.*",
-        "NOVEL A genuinely new payment incident.",
+        "DUPLICATE The same payment gateway timeout is already recorded.",
     )
     contract.add_observation("payment gateway timeout")
     assert direct_vm.run_validator() is True
 
+    # An opposite classification (NOVEL for a near-duplicate) must fail consensus.
     direct_vm.clear_mocks()
     direct_vm.mock_llm(
         ".*payment gateway timeout.*",
-        "unclear response",
+        "NOVEL A brand new payment incident.",
     )
+    contract.add_observation("payment gateway timeout")
+    assert direct_vm.run_validator() is False
+
+    # Malformed output is rejected too.
+    direct_vm.clear_mocks()
+    direct_vm.mock_llm(".*payment gateway timeout.*", "unclear response")
     contract.add_observation("payment gateway timeout")
     assert direct_vm.run_validator() is False
 
