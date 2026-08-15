@@ -111,16 +111,15 @@ class AnomalyDetection(gl.Contract):
 
             def classification_task() -> str:
                 prompt = (
-                    "You adjudicate anomaly logs. Decide whether the incoming log "
-                    "is a genuinely NEW anomaly (NOVEL) or a near-duplicate of an "
-                    "already recorded one (DUPLICATE).\n\n"
+                    "You adjudicate anomaly logs and justify a novelty verdict.\n\n"
                     f"Incoming log: {log}\n"
                     f"Closest stored observation: {neighbor_text}\n"
                     f"Embedding similarity to closest: {similarity:.4f} "
-                    f"(novelty threshold: {threshold:.2f})\n"
-                    "Similarity below the threshold suggests NOVEL; at or above it "
-                    "suggests DUPLICATE. Use it as evidence, not a rule: paraphrases "
-                    "of the same incident are DUPLICATE, a different incident is NOVEL.\n\n"
+                    f"(novelty threshold: {threshold:.2f})\n\n"
+                    "The verdict MUST follow this rule: if the embedding similarity "
+                    f"is below the threshold ({threshold:.2f}), the observation is "
+                    "NOVEL; otherwise it is DUPLICATE. Apply the rule, then write a "
+                    "one-line justification after the verdict token.\n\n"
                     "Return exactly one line: NOVEL <short reason> or DUPLICATE <short reason>."
                 )
                 return gl.nondet.exec_prompt(prompt)
@@ -130,7 +129,20 @@ class AnomalyDetection(gl.Contract):
                     return False
                 raw = str(result.calldata).strip()
                 first = raw.split(maxsplit=1)[0].upper() if raw else ""
-                return first in ("NOVEL", "DUPLICATE")
+                if first not in ("NOVEL", "DUPLICATE"):
+                    return False
+                # Independently recompute the deterministic novelty decision from
+                # the same observation, nearest match, similarity, and threshold.
+                emb = self.get_embedding(log)
+                matches = list(self.vector_store.knn(emb, 1))
+                if len(matches) == 0:
+                    expected = "NOVEL"
+                else:
+                    sim = self._similarity(matches[0].distance)
+                    expected = (
+                        "NOVEL" if sim < float(self.novel_threshold) else "DUPLICATE"
+                    )
+                return first == expected
 
             verdict = gl.vm.run_nondet(classification_task, verdict_validator)
             novel, reason = self._classify(str(verdict), threshold_novel)

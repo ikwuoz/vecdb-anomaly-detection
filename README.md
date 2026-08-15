@@ -41,7 +41,7 @@ pyproject.toml                # Python/pytest configuration
 | `get_closest(text)` | view | The stored observation nearest to `text`, with similarity |
 | `observation_count()` | view | Number of stored observations |
 
-Novelty is decided by an LLM adjudication: embedding + nearest-neighbor search shortlists the closest candidate deterministically, then the LLM classifies the incoming log as **NOVEL** or **DUPLICATE** given that evidence. Because the LLM call is non-deterministic, it runs inside `gl.vm.run_nondet`, whose validator independently verifies the verdict before it is stored. The similarity threshold is used as evidence in the prompt and as the fallback when the LLM returns a malformed verdict.
+Novelty is decided by an LLM adjudication: embedding + nearest-neighbor search shortlists the closest candidate deterministically, then the LLM classifies the incoming log as **NOVEL** or **DUPLICATE** given that evidence. Because the LLM call is non-deterministic, it runs inside `gl.vm.run_nondet`, whose validator **independently recomputes** the novelty decision (same observation, nearest match, similarity, threshold) and only agrees when the leader's verdict token matches it — so an opposite or malformed classification fails consensus and cannot change the stored result. The similarity threshold is used as the rule in the prompt and as the leader-side fallback.
 
 ## Quick Start
 
