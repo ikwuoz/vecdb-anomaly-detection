@@ -10,12 +10,13 @@ AnomalyDetection — a vector-semantic change tracker with LLM adjudication.
 
 Indexes free-text observations as embeddings and classifies an incoming
 observation as *novel* (a genuinely new anomaly) or a *near-duplicate* of an
-existing one. Embedding + nearest-neighbor search shortlists the closest
-candidate deterministically, then an LLM makes the actual novelty decision
-based on that evidence. Because the LLM call is non-deterministic, it runs
-inside a consensus block (`gl.vm.run_nondet`) whose validator independently
-binds the consequential output: only a verdict that passes validation drives
-the stored record, the `is_novel` flag, and the returned reason.
+existing one. Embedding + nearest-neighbor search assembles the evidence, then
+an LLM makes the novelty decision and justifies it. Because the LLM call is
+non-deterministic, it runs inside a consensus block (`gl.vm.run_nondet`):
+validators independently recompute the same evidence, re-derive the
+classification, and only agree when it matches the leader's verdict — so the
+stored classification is genuinely determined by consensus, with the similarity
+threshold serving as evidence rather than a fixed decider.
 
 """
 
@@ -68,6 +69,24 @@ class AnomalyDetection(gl.Contract):
             return True, text
         return fallback, text
 
+    def _classification_prompt(
+        self, log: str, neighbor_text: str, similarity: float, threshold: float
+    ) -> str:
+        return (
+            "You adjudicate anomaly logs. Decide whether the incoming log is a "
+            "genuinely NEW anomaly (NOVEL) or a near-duplicate of an already "
+            "recorded one (DUPLICATE).\n\n"
+            f"Incoming log: {log}\n"
+            f"Closest stored observation: {neighbor_text}\n"
+            f"Embedding similarity to closest: {similarity:.4f} "
+            f"(novelty threshold: {threshold:.2f})\n"
+            "Similarity below the threshold suggests NOVEL; at or above it "
+            "suggests DUPLICATE. Use it as evidence, not a hard rule: paraphrases "
+            "describing the same incident are DUPLICATE, while a genuinely "
+            "different incident is NOVEL even if superficially similar.\n\n"
+            "Return exactly one line: NOVEL <short reason> or DUPLICATE <short reason>."
+        )
+
     @gl.public.view
     def get_closest(self, text: str) -> dict | None:
         emb = self.get_embedding(text)
@@ -110,17 +129,8 @@ class AnomalyDetection(gl.Contract):
             threshold_novel = bool(similarity < threshold)
 
             def classification_task() -> str:
-                prompt = (
-                    "You adjudicate anomaly logs and justify a novelty verdict.\n\n"
-                    f"Incoming log: {log}\n"
-                    f"Closest stored observation: {neighbor_text}\n"
-                    f"Embedding similarity to closest: {similarity:.4f} "
-                    f"(novelty threshold: {threshold:.2f})\n\n"
-                    "The verdict MUST follow this rule: if the embedding similarity "
-                    f"is below the threshold ({threshold:.2f}), the observation is "
-                    "NOVEL; otherwise it is DUPLICATE. Apply the rule, then write a "
-                    "one-line justification after the verdict token.\n\n"
-                    "Return exactly one line: NOVEL <short reason> or DUPLICATE <short reason>."
+                prompt = self._classification_prompt(
+                    log, neighbor_text, similarity, threshold
                 )
                 return gl.nondet.exec_prompt(prompt)
 
@@ -131,18 +141,23 @@ class AnomalyDetection(gl.Contract):
                 first = raw.split(maxsplit=1)[0].upper() if raw else ""
                 if first not in ("NOVEL", "DUPLICATE"):
                     return False
-                # Independently recompute the deterministic novelty decision from
-                # the same observation, nearest match, similarity, and threshold.
+                # Independently recompute the same evidence and re-derive the
+                # classification; agree only if it matches the leader's verdict.
                 emb = self.get_embedding(log)
                 matches = list(self.vector_store.knn(emb, 1))
                 if len(matches) == 0:
-                    expected = "NOVEL"
-                else:
-                    sim = self._similarity(matches[0].distance)
-                    expected = (
-                        "NOVEL" if sim < float(self.novel_threshold) else "DUPLICATE"
-                    )
-                return first == expected
+                    return first == "NOVEL"
+                sim = self._similarity(matches[0].distance)
+                my_prompt = self._classification_prompt(
+                    log, matches[0].value.text, sim, float(self.novel_threshold)
+                )
+                my_verdict = gl.nondet.exec_prompt(my_prompt)
+                my_first = (
+                    my_verdict.strip().split(maxsplit=1)[0].upper()
+                    if my_verdict.strip()
+                    else ""
+                )
+                return first == my_first
 
             verdict = gl.vm.run_nondet(classification_task, verdict_validator)
             novel, reason = self._classify(str(verdict), threshold_novel)
