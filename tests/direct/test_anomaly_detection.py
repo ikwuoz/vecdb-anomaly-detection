@@ -63,7 +63,23 @@ def test_malformed_verdict_falls_back_to_threshold(
     assert duplicate["is_novel"] is False
 
 
-def test_validator_recomputes_decision_and_rejects_divergence(
+def test_llm_verdict_drives_stored_classification(
+    direct_vm, direct_deploy, direct_alice
+):
+    contract = direct_deploy("contracts/anomaly_detection.py")
+    direct_vm.sender = direct_alice
+
+    contract.add_observation("payment gateway timeout")
+    direct_vm.mock_llm(
+        ".*payment gateway timeout.*",
+        "NOVEL The timeout escalated to a new severity level.",
+    )
+    result = contract.add_observation("payment gateway timeout")
+    assert result["is_novel"] is True
+    assert result["reason"].startswith("NOVEL")
+
+
+def test_validator_independently_derives_and_rejects_divergence(
     direct_vm, direct_deploy, direct_alice
 ):
     contract = direct_deploy("contracts/anomaly_detection.py")
@@ -71,7 +87,7 @@ def test_validator_recomputes_decision_and_rejects_divergence(
 
     contract.add_observation("payment gateway timeout")
 
-    # Verdict matching the independently recomputed decision (DUPLICATE) passes.
+    # Leader and validator independently arrive at the same verdict: consensus.
     direct_vm.mock_llm(
         ".*payment gateway timeout.*",
         "DUPLICATE The same payment gateway timeout is already recorded.",
@@ -79,16 +95,22 @@ def test_validator_recomputes_decision_and_rejects_divergence(
     contract.add_observation("payment gateway timeout")
     assert direct_vm.run_validator() is True
 
-    # An opposite classification (NOVEL for a near-duplicate) must fail consensus.
+    # Leader says NOVEL; a validator that independently re-derives DUPLICATE
+    # from the same evidence votes against it: consensus fails.
     direct_vm.clear_mocks()
     direct_vm.mock_llm(
         ".*payment gateway timeout.*",
         "NOVEL A brand new payment incident.",
     )
     contract.add_observation("payment gateway timeout")
+    direct_vm.clear_mocks()
+    direct_vm.mock_llm(
+        ".*payment gateway timeout.*",
+        "DUPLICATE The same payment gateway timeout is already recorded.",
+    )
     assert direct_vm.run_validator() is False
 
-    # Malformed output is rejected too.
+    # Malformed leader output is rejected outright.
     direct_vm.clear_mocks()
     direct_vm.mock_llm(".*payment gateway timeout.*", "unclear response")
     contract.add_observation("payment gateway timeout")
