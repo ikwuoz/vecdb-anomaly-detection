@@ -11,10 +11,11 @@ jobs:
     name: Lint Contracts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
       - run: pip install -r requirements.txt
       - run: genvm-lint check contracts/anomaly_detection.py
 
@@ -22,9 +23,10 @@ jobs:
     name: Direct Mode Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
       - run: pip install -r requirements.txt
       - run: pytest tests/direct/ -v
